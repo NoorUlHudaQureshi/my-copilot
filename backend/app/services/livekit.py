@@ -1,6 +1,9 @@
 from livekit import api
 from app.core.config import settings
 from typing import Optional
+import logging
+
+logger = logging.getLogger("ai-copilot")
 
 class LiveKitService:
     def __init__(self):
@@ -10,10 +13,10 @@ class LiveKitService:
 
     async def create_token(self, room_name: str, identity: str) -> Optional[str]:
         """
-        Generates a LiveKit access token for a client to join a room.
+        Generates a real LiveKit access token.
         """
         if not self.api_key or not self.api_secret:
-            print("LiveKit API credentials are not configured.")
+            logger.error("LiveKit API credentials are not configured in .env")
             return None
 
         try:
@@ -25,7 +28,7 @@ class LiveKitService:
                 ))
             return token.to_jwt()
         except Exception as e:
-            print(f"LiveKit Token Error: {e}")
+            logger.error(f"LiveKit Token Error: {e}")
             return None
 
 livekit_service = LiveKitService()

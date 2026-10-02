@@ -10,7 +10,6 @@ class LLMProvider:
     def __init__(self):
         self.ollama_url = f"{settings.OLLAMA_BASE_URL}/api/chat"
         self.default_model = settings.DEFAULT_MODEL
-        self.vision_model = settings.VISION_MODEL
 
     async def generate_chat_response(
         self,
@@ -18,18 +17,17 @@ class LLMProvider:
         stream: bool = False
     ) -> Union[Dict[str, Any], AsyncGenerator[str, None]]:
         """
-        Generate a response using Ollama.
-        Uses VISION_MODEL if images are present, otherwise DEFAULT_MODEL.
+        Generate a response using Ollama. Now supports Tool calling and Multimodal input.
         """
         from app.agents.registry import registry
         tools = registry.get_all_metadata()
 
-        # Determine which model to use
-        has_images = any("images" in msg for msg in messages)
-        model_to_use = self.vision_model if has_images else self.default_model
+        # Ollama Multimodal Format: images should be a list of base64 strings
+        # inside the message object for some models, or in the 'images' field.
+        # For the /api/chat endpoint, the standard is including them in the message content.
 
         payload = {
-            "model": model_to_use,
+            "model": self.default_model,
             "messages": messages,
             "stream": stream,
             "options": {
@@ -41,13 +39,14 @@ class LLMProvider:
 
         if not stream:
             try:
+                # Increased timeout for image processing
                 async with httpx.AsyncClient(timeout=120.0) as client:
-                    logger.info(f"Sending request to Ollama using model {model_to_use}...")
+                    logger.info(f"Sending request to Ollama with model {self.default_model}...")
                     response = await client.post(self.ollama_url, json=payload)
 
                     if response.status_code != 200:
                         logger.error(f"Ollama API Error: {response.status_code} - {response.text}")
-                        return {"type": "error", "content": f"Ollama API error: {response.status_code}. Make sure the model {model_to_use} is pulled."}
+                        return {"type": "error", "content": f"Ollama API error: {response.status_code}"}
 
                     result = response.json().get("message", {})
                     if "tool_calls" in result and result["tool_calls"]:

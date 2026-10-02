@@ -47,20 +47,25 @@ async def health_check():
 @app.post("/api/v1/chat")
 async def chat_endpoint(request: ChatRequest):
     try:
-        # Construct multimodal message
-        user_content = [{"type": "text", "text": request.message}]
+        raw_image_base64 = None
         if request.image_base64:
-            user_content.append({
-                "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{request.image_base64}"}
-            })
+            if "," in request.image_base64:
+                raw_image_base64 = request.image_base64.split(",")[1]
+            else:
+                raw_image_base64 = request.image_base64
 
-        messages = request.history + [{"role": "user", "content": user_content if request.image_base64 else request.message}]
+        messages = []
+        for msg in request.history:
+            messages.append({"role": msg["role"], "content": msg["content"]})
 
-        # First pass: Get LLM response
+        user_message = {"role": "user", "content": request.message}
+        if raw_image_base64:
+            user_message["images"] = [raw_image_base64]
+
+        messages.append(user_message)
+
         response_data = await llm_service.generate_chat_response(messages)
 
-        # Handle tool calls (The Agentic Loop)
         if isinstance(response_data, dict) and response_data.get("type") == "tool_call":
             tool_calls = response_data.get("tool_calls", [])
             tool_results = []
@@ -82,15 +87,13 @@ async def chat_endpoint(request: ChatRequest):
                     logger.warning(f"Skill not found: {func_name}")
                     tool_results.append({"role": "tool", "content": "Skill not found", "tool_call_id": call.get("id")})
 
-            # Second pass: Feed tool results back to LLM
             final_messages = messages + [{"role": "assistant", "content": "Calling tools..."}] + tool_results
             final_response = await llm_service.generate_chat_response(final_messages)
 
             if isinstance(final_response, dict):
                 return {"response": final_response.get("content", "I processed the tools but couldn't formulate a final answer.")}
-            return {"response": final_response}
+            return {"response": final_//response}
 
-        # Handle regular text response
         if isinstance(response_data, dict):
             return {"response": response_data.get("content", "I couldn't generate a response.")}
 
@@ -105,7 +108,8 @@ async def voice_token_endpoint(request: VoiceTokenRequest):
     try:
         token = await livekit_service.create_token(request.room, request.identity)
         if not token:
-            raise HTTPException(status_code=500, detail="Could not generate LiveKit token. Check API keys.")
+            # This will now happen if keys are missing, as requested.
+            raise HTTPException(status_code=500, detail="LiveKit API credentials are not configured. Please add them to your .env file.")
         return {"token": token}
     except Exception as e:
         logger.exception("Error generating voice token")
