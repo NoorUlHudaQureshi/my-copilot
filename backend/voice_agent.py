@@ -1,50 +1,54 @@
 import logging
-from dotenv import load_dotenv
-from livekit.agents import JobContext, WorkerOptions, cli, llm
-from livekit.plugins import openai, silero, deepgram
-from app.services.llm import llm_service
-from app.core.config import settings
 
-# Setup logging
+from dotenv import load_dotenv
+from pathlib import Path
+
+load_dotenv(Path(__file__).with_name(".env"))
+
+from livekit.agents import AgentSession, JobContext, WorkerOptions, cli
+from livekit.plugins import silero, deepgram
+
+from app.core.config import settings
+from app.services.ollama_llm import OllamaLLM
+from app.services.piper_tts import PiperTTS
+
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("voice-agent")
+
 
 async def entrypoint(ctx: JobContext):
     logger.info(f"Starting voice agent for room: {ctx.room.name}")
 
-    # Initialize the voice pipeline
-    # 1. VAD (Voice Activity Detection) - Silero is great for local use
     vad = silero.VAD.load()
 
-    # 2. STT (Speech-to-Text) - Deepgram is fast and industry standard
-    # Note: Requires DEEPGRAM_API_KEY in .env
-    stt = deepgram.STT()
+    stt = deepgram.STT(
+        api_key=settings.DEEPGRAM_API_KEY
+    )
 
-    # 3. LLM - Using our existing logic via a wrapper
-    # For LiveKit agents, we typically use their LLM interface
-    model = openai.LLM(model="gpt-4o-mini")
+    model = OllamaLLM()
 
-    # 4. TTS (Text-to-Speech) - OpenAI TTS is high quality
-    tts = openai.TTS()
+    tts = PiperTTS(
+        "en_US-lessac-medium.onnx"
+    )
 
-    # Create the agent
-    agent = llm.VoiceAssistant(
+    session = AgentSession(
         vad=vad,
         stt=stt,
         llm=model,
         tts=tts,
-        chat_ctx=llm.ChatContext().append(
-            role="system",
-            text="You are a helpful AI Assistant. Keep your responses concise and friendly for voice interaction."
-        ),
     )
 
-    # Start the agent in the room
-    agent.start(ctx.room)
+    await session.start(
+        room=ctx.room,
+    )
 
-    # Keep the agent alive
-    await agent.say("Hello! I am your AI Assistant. How can I help you today?")
+    await session.generate_reply(
+        instructions="Say hello and ask how you can help."
+    )
+
 
 if __name__ == "__main__":
-    # This allows us to run the agent using: python voice_agent.py dev
-    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
+    cli.run_app(
+        WorkerOptions(entrypoint_fnc=entrypoint)
+    )

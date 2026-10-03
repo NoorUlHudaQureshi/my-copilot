@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     LIVEKIT_API_KEY: Optional[str] = None
     LIVEKIT_API_SECRET: Optional[str] = None
     LIVEKIT_URL: Optional[str] = None
+    DEEPGRAM_API_KEY: Optional[str] = None
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
